@@ -1,11 +1,13 @@
 package part4_techniques
 
-import akka.actor.ActorSystem
+import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
+import akka.dispatch.MessageDispatcher
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Sink, Source}
 
 import java.util.Date
 import scala.concurrent.Future
+import scala.concurrent.duration.DurationInt
 
 object IntegratingWithExternalServices extends App {
   implicit val system: ActorSystem = ActorSystem("IntegratingWithExternalServices")
@@ -62,4 +64,60 @@ object IntegratingWithExternalServices extends App {
   /** Running Futures in streams implies that we may end up running lot of futures.
    * We should run futures in their own execution context not on the actorSystem dispatcher, they may starve for threads.
    * */
+}
+
+
+object MapAsyncWithAskingActors extends App {
+  implicit val system: ActorSystem = ActorSystem("IntegratingWithExternalServices")
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+
+  implicit val dispatcher: MessageDispatcher = system.dispatchers.lookup("dedicated-dispatcher")
+
+  def genericService[A, B](element: A): Future[B] = ???
+
+  case class PagerEvent(application: String, description: String, date: Date)
+
+  val eventSource = Source(List(
+    PagerEvent("AkkaInfra", "Infrastructure broke", new Date),
+    PagerEvent("FastDataPipeline", "Illegal element in the pipeline", new Date),
+    PagerEvent("AkkaInfra", "A service stopped responding", new Date),
+    PagerEvent("SuperFrontend", "A button doesn't work", new Date),
+  ))
+
+  class PagerActor extends Actor with ActorLogging{
+    private val engineers = List("John", "Mike", "Don")
+    private val emails: Map[String, String] = Map(
+      "John" -> "john@company.com", "Mike" -> "mike@company.com", "Don" -> "don@company.com"
+    )
+
+    private def processEvent(pagerEvent: PagerEvent) =  {
+      //val engineerIndex = pagerEvent.date.getDay
+      val engineerIndex = (pagerEvent.date.toInstant.getEpochSecond / (24 * 3600)) % engineers.length
+      val engineer = engineers(engineerIndex.toInt)
+      val engineerEmail = emails(engineer)
+
+      // page/notify the engineer
+      log.info(s"Sending engineer $engineer email: $engineerEmail a high priority notification: $pagerEvent")
+      Thread.sleep(1000) // time spent to page the engineer.
+      engineerEmail // return the email that was paged.
+    }
+
+    override def receive: Receive = {
+      case pagerEvent: PagerEvent =>
+        sender() ! processEvent(pagerEvent)
+    }
+  }
+
+  val infraEvents = eventSource.filter(_.application == "AkkaInfra")
+  import akka.pattern.ask
+  val pagerActor = system.actorOf(Props[PagerActor], "pagerActor")
+
+  import akka.util.Timeout
+  implicit val timeout: Timeout = Timeout(3.seconds)
+  val alternativePagedEngineerEmails = infraEvents.mapAsync(parallelism = 4)(event => (pagerActor ? event).mapTo[String])
+
+  val pagedEmailSink = Sink.foreach[String](email => println(s"Successfully sent notification to $email"))
+  alternativePagedEngineerEmails.to(pagedEmailSink).run()
+
+
 }
