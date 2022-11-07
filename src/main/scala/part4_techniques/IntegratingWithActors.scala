@@ -36,12 +36,12 @@ object IntegratingWithActors extends App {
   /* In reality when we do numberSource.ask, What akka does is ask.viaFlow*/
 
 
-  /** actor as a flow **/
+  /** actor as a source **/
   val actorPoweredSource = Source.actorRef[Int](bufferSize = 10, overflowStrategy = OverflowStrategy.dropHead)
   val materializedValue = actorPoweredSource.to(Sink.foreach[Int](n => println(s"Actor powered flow got number $n")))
   /*val materializedActorRef: ActorRef = materializedValue.run()
-  materializedActorRef ! 10
-  materializedActorRef ! akka.actor.Status.Success("Completed")*/
+  materializedActorRef ! 10//materializedActorRef is waiting for messages, we sent 10 & got Actor powered flow got number 10
+  materializedActorRef ! akka.actor.Status.Success("Completed")// terminating the stream*/
 
 
   /** actor as a sink **/
