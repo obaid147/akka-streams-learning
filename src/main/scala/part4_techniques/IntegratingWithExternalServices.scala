@@ -20,11 +20,11 @@ object IntegratingWithExternalServices extends App {
 
   /*
    example:- simplified PagerDuty. (Service to manage on call engineers)
-   if something break in the code/production..., an alert is issued and an on call engineers is notified
+   if something breaks in code/production..., an alert is issued and an on call engineers is notified
     via emailed/phone-call/some other kind of communication.
    */
   case class PagerEvent(application: String, description: String, date: Date)
-  //                    app that broke,      desc of app,         date at app broke.
+  //                    app that broke,      desc of same app,    date at app broke.
   val eventSource = Source(List(
     PagerEvent("AkkaInfra", "Infrastructure broke", new Date),
     PagerEvent("FastDataPipeline", "Illegal element in the pipeline", new Date),
@@ -73,8 +73,6 @@ object MapAsyncWithAskingActors extends App {
 
   implicit val dispatcher: MessageDispatcher = system.dispatchers.lookup("dedicated-dispatcher")
 
-  def genericService[A, B](element: A): Future[B] = ???
-
   case class PagerEvent(application: String, description: String, date: Date)
 
   val eventSource = Source(List(
@@ -109,15 +107,17 @@ object MapAsyncWithAskingActors extends App {
   }
 
   val infraEvents = eventSource.filter(_.application == "AkkaInfra")
-  import akka.pattern.ask
+
   val pagerActor = system.actorOf(Props[PagerActor], "pagerActor")
 
   import akka.util.Timeout
+  import akka.pattern.ask
+
   implicit val timeout: Timeout = Timeout(3.seconds)
   val alternativePagedEngineerEmails = infraEvents.mapAsync(parallelism = 4)(event => (pagerActor ? event).mapTo[String])
 
   val pagedEmailSink = Sink.foreach[String](email => println(s"Successfully sent notification to $email"))
   alternativePagedEngineerEmails.to(pagedEmailSink).run()
 
-
+  // do not confuse mapAsync with Async(ASYNC boundary) which makes component/chain Stream to run on separate actor.
 }
