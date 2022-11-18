@@ -142,9 +142,5 @@ object CustomOperators extends App {
     fail:- Terminates the stream when an exception.
     isAvailable:- Checks if an element has already been pushed to the port.
     isClosed:-  checks if closed or not
-
-
-
-
    */
 }
